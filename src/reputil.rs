@@ -62,9 +62,11 @@ where
     return None;
 }
 
+use std::fmt::Debug;
+
 pub fn until_success<R, E>(mut f: impl FnMut() -> Result<R, E>, max_retries: u32) -> Result<R, Err>
 where
-    E: std::error::Error + Send + Sync + 'static,
+    E: Into<anyhow::Error> + Debug,
 {
     let mut retries: u32 = 0;
     while max_retries >= retries {
@@ -77,7 +79,7 @@ where
                         err,
                         retries + 1
                     );
-                    return Err(anyhow::Error::new(err));
+                    return Err(err.into());
                 } else {
                     log::warn!(
                         "{:?}\nAttempt {} error caught, retrying...",
@@ -93,7 +95,6 @@ where
     Err(anyhow::Error::msg("Invalid state"))
 }
 
-use std::fmt::Debug;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 pub struct SharedMut<T> {
@@ -467,7 +468,7 @@ pub fn provision_mqtt(
             "n" => {
                 let ur = until_success_or(
                     || {
-                        let s = console_prompt("Broker URL")?;
+                        let s = console_prompt("Broker URL(ex. mqtt://mqtt.example.net:1883")?;
                         log::info!("Got URL: \"{}\"", s);
                         if s.trim() != "" {
                             Ok(s)
@@ -532,7 +533,9 @@ pub fn provision_mqtt(
                         _ => {
                             let ur = until_success_or(
                                 || {
-                                    let s = console_prompt("Broker URL")?;
+                                    let s = console_prompt(
+                                        "Broker URL(ex. mqtt://mqtt.example.net:1883",
+                                    )?;
                                     log::info!("Got URL: \"{}\"", s);
                                     if s.trim() != "" {
                                         Ok(s)
@@ -569,7 +572,7 @@ pub fn provision_mqtt(
                 } else {
                     let ur = until_success_or(
                         || {
-                            let s = console_prompt("Broker URL")?;
+                            let s = console_prompt("Broker URL(ex. mqtt://mqtt.example.net:1883")?;
                             log::info!("Got URL: \"{}\"", s);
                             if s.trim() != "" {
                                 Ok(s)
@@ -634,7 +637,7 @@ pub fn provision_mqtt(
                 _ => {
                     let ur = until_success_or(
                         || {
-                            let s = console_prompt("Broker URL")?;
+                            let s = console_prompt("Broker URL(ex. mqtt://mqtt.example.net:1883")?;
                             log::info!("Got URL: \"{}\"", s);
                             if s.trim() != "" {
                                 Ok(s)
@@ -669,7 +672,7 @@ pub fn provision_mqtt(
         } else {
             let ur = until_success_or(
                 || {
-                    let s = console_prompt("Broker URL")?;
+                    let s = console_prompt("Broker URL(ex. mqtt://mqtt.example.net:1883")?;
                     log::info!("Got URL: \"{}\"", s);
                     if s.trim() != "" {
                         Ok(s)
