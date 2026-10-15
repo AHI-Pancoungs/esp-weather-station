@@ -5,6 +5,7 @@ use esp_idf_svc::{
     eventloop::EspSystemEventLoop,
     hal::{
         delay::Delay,
+        gpio::{InterruptType, PinDriver, Pull},
         i2c::{I2cConfig, I2cDriver},
         peripherals::Peripherals,
         units::KiloHertz,
@@ -14,10 +15,18 @@ use esp_idf_svc::{
 };
 use heapless::Vec as HVec;
 use serde::Serialize;
-use std::{cell::RefCell, time::Instant};
+use std::{
+    cell::RefCell,
+    sync::atomic::{AtomicU32, Ordering},
+    time::Instant,
+};
+
+use crate::config::MILIMETERS_PER_TIP;
 
 mod config;
 mod reputil;
+
+static RAIN_GAUGE_COUNTER: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Debug, Clone, Copy, Serialize)]
 struct LuxMeasurement {
@@ -30,6 +39,7 @@ struct MeasurementBatch {
     temperature_c: f32,
     humidity_percent: f32,
     pressure_hpa: f32,
+    rainfall_mm: f32,
     lux_batch: HVec<LuxMeasurement, 60>,
     batch_id: u64,
 }
@@ -39,7 +49,6 @@ fn main() -> reputil::Rslt {
     reputil::enable_uart_blocking_read();
 
     // TODO: add LED(GPIO 17) turning on when finishing setup and blinking when sending data
-    // TODO: add tipping bucket rain sensor(GPIO 18) count tips on every batch minute and send count in batch
     let peripherals = Peripherals::take()?;
     let sys_loop = EspSystemEventLoop::take()?;
     let nvs = EspDefaultNvsPartition::take()?;
@@ -55,14 +64,14 @@ fn main() -> reputil::Rslt {
     let i2c_bus = RefCell::new(i2c);
 
     let mut bme = BME280::new_primary(RefCellDevice::new(&i2c_bus));
-    reputil::until_success_or(
+    reputil::until_success(
         || {
             bme.init(&mut delay).map_err(|e| {
                 reputil::Err::msg(format!("Error in initializing the BME280 sensor: {:?}", e))
             })
         },
         4,
-    );
+    )?;
 
     log::info!("BME280 sensor successfully Initialized");
 
@@ -76,7 +85,7 @@ fn main() -> reputil::Rslt {
         4,
     )?;
 
-    log::info!("Wi-Fi networking successfully Initialized");
+    log::info!("Wi-Fi networking successfully initialized.");
 
     let (mqtt_url, mqtt_user, mqtt_pass) = reputil::provision_mqtt(Some(nvs.clone()))?;
     let mut mqtt = reputil::setup_mqtt(
@@ -95,12 +104,26 @@ fn main() -> reputil::Rslt {
             )
         })?;
 
+    let mut rain_gauge_sense = PinDriver::input(peripherals.pins.gpio4, Pull::Floating)?;
+
+    rain_gauge_sense.set_interrupt_type(InterruptType::NegEdge)?;
+
+    unsafe {
+        rain_gauge_sense.subscribe(|| {
+            // Inside ISR
+            RAIN_GAUGE_COUNTER.fetch_add(1, Ordering::Relaxed);
+        })?;
+    }
+    rain_gauge_sense.enable_interrupt()?;
+
     let mut lux_measurement_batch: HVec<LuxMeasurement, 60> = HVec::new();
     let mut batch_start = Instant::now();
     let mut batch_id: u64 = 0;
 
     let mut next_sensor_read = Instant::now();
     let mut next_network_update = Instant::now();
+
+    log::info!("Everything has been intialized successfully, running main superloop.");
 
     loop {
         reputil::delay(reputil::Duration::from_millis(1));
@@ -157,6 +180,8 @@ fn main() -> reputil::Rslt {
                 temperature_c: bme_reading.temperature,
                 humidity_percent: bme_reading.humidity,
                 pressure_hpa: bme_reading.pressure / 100f32, // Pa -> hPa scaling factor
+                rainfall_mm: (RAIN_GAUGE_COUNTER.swap(0, Ordering::Relaxed) as f32
+                    * MILIMETERS_PER_TIP),
                 lux_batch: lux_measurement_batch.clone(),
                 batch_id: batch_id,
             };
