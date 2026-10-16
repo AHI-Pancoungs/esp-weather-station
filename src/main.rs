@@ -21,7 +21,7 @@ use std::{
     time::Instant,
 };
 
-use crate::config::MILIMETERS_PER_TIP;
+use crate::config::{LED_BLINK_PERIOD, MILIMETERS_PER_TIP};
 
 mod config;
 mod reputil;
@@ -48,7 +48,6 @@ fn main() -> reputil::Rslt {
     reputil::esp_init();
     reputil::enable_uart_blocking_read();
 
-    // TODO: add LED(GPIO 17) turning on when finishing setup and blinking when sending data
     // TODO: add general-purpose relay(GPIO 16) able to be turned on using an HTTP API
     let peripherals = Peripherals::take()?;
     let sys_loop = EspSystemEventLoop::take()?;
@@ -117,14 +116,18 @@ fn main() -> reputil::Rslt {
     }
     rain_gauge_sense.enable_interrupt()?;
 
+    let mut led_pin = PinDriver::output(peripherals.pins.gpio17)?;
+    led_pin.set_high()?;
+    let led_shared = reputil::SharedMut::new(led_pin);
+
     let mut lux_measurement_batch: HVec<LuxMeasurement, 60> = HVec::new();
     let mut batch_start = Instant::now();
     let mut batch_id: u64 = 0;
 
     let mut next_sensor_read = Instant::now();
-    let mut next_network_update = Instant::now();
+    let mut next_network_update = Instant::now() + reputil::Duration::from_secs(60);
 
-    log::info!("Everything has been intialized successfully, running main superloop.");
+    log::info!("Running main superloop.");
 
     loop {
         reputil::delay(reputil::Duration::from_millis(1));
@@ -197,6 +200,16 @@ fn main() -> reputil::Rslt {
                 json.as_bytes(),
             )?;
 
+            let led_shared_cl = led_shared.clone();
+            std::thread::spawn(move || -> reputil::Rslt {
+                led_shared_cl.with(|led| -> reputil::Rslt {
+                    led.set_low()?;
+                    std::thread::sleep(LED_BLINK_PERIOD);
+                    led.set_high()?;
+                    Ok(())
+                })
+            });
+
             lux_measurement_batch.clear();
             batch_start = Instant::now();
             batch_id += 1;
@@ -204,6 +217,6 @@ fn main() -> reputil::Rslt {
             next_network_update += config::NETWORK_PERIOD;
         }
 
-        //TODO: add resilient networking cleanup task if nessaccary
+        //TODO: add resilient networking cleanup task (maybe?)
     }
 }
