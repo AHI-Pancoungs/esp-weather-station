@@ -21,8 +21,6 @@ use std::{
     time::Instant,
 };
 
-use crate::config::{LED_BLINK_PERIOD, MILIMETERS_PER_TIP};
-
 mod config;
 mod reputil;
 
@@ -73,7 +71,7 @@ fn main() -> reputil::Rslt {
         4,
     )?;
 
-    log::info!("BME280 sensor successfully Initialized");
+    log::info!("BME280 sensor successfully Initialized.");
 
     let (ssid, pass) = reputil::provision_wifi(Some(nvs.clone()))?;
     let _wifi = reputil::setup_wifi(
@@ -125,7 +123,7 @@ fn main() -> reputil::Rslt {
     let mut batch_id: u64 = 0;
 
     let mut next_sensor_read = Instant::now();
-    let mut next_network_update = Instant::now() + reputil::Duration::from_secs(60);
+    let mut next_network_update = Instant::now() + config::NETWORK_PERIOD;
 
     log::info!("Running main superloop.");
 
@@ -185,13 +183,13 @@ fn main() -> reputil::Rslt {
                 humidity_percent: bme_reading.humidity,
                 pressure_hpa: bme_reading.pressure / 100f32, // Pa -> hPa scaling factor
                 rainfall_mm: (RAIN_GAUGE_COUNTER.swap(0, Ordering::Relaxed) as f32
-                    * MILIMETERS_PER_TIP),
+                    * config::MILIMETERS_PER_TIP),
                 lux_batch: lux_measurement_batch.clone(),
                 batch_id: batch_id,
             };
 
             let json = serde_json::to_string(&batch)
-                .map_err(|_| reputil::Err::msg("JSON serialixation failed"))?;
+                .map_err(|_| reputil::Err::msg("JSON serialization failed."))?;
 
             mqtt.enqueue(
                 config::MQTT_SENSOR_TOPIC,
@@ -204,7 +202,7 @@ fn main() -> reputil::Rslt {
             std::thread::spawn(move || -> reputil::Rslt {
                 led_shared_cl.with(|led| -> reputil::Rslt {
                     led.set_low()?;
-                    std::thread::sleep(LED_BLINK_PERIOD);
+                    std::thread::sleep(config::LED_BLINK_PERIOD);
                     led.set_high()?;
                     Ok(())
                 })
