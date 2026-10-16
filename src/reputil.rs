@@ -800,11 +800,3 @@ pub fn setup_mqtt(
     })
     .map_err(|_| Err::msg("Failed initlalizing MQTT"))
 }
-
-macro_rules! map_option_heapless_string_as_str {
-    ($x:expr) => {
-        $x.as_ref().map(|s| s.as_str())
-    };
-}
-
-pub(crate) use map_option_heapless_string_as_str;

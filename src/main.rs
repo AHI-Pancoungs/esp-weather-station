@@ -88,8 +88,8 @@ fn main() -> reputil::Rslt {
     let (mqtt_url, mqtt_user, mqtt_pass) = reputil::provision_mqtt(Some(nvs.clone()))?;
     let mut mqtt = reputil::setup_mqtt(
         mqtt_url.as_str(),
-        reputil::map_option_heapless_string_as_str!(mqtt_user),
-        reputil::map_option_heapless_string_as_str!(mqtt_pass),
+        mqtt_user.as_deref(),
+        mqtt_pass.as_deref(),
         config::MQTT_CLIENT_ID,
     )?;
 
