@@ -17,7 +17,7 @@ use heapless::Vec as HVec;
 use serde::Serialize;
 use std::{
     cell::RefCell,
-    sync::atomic::{AtomicU32, Ordering},
+    sync::atomic::{AtomicBool, AtomicU32, Ordering},
     time::Instant,
 };
 
@@ -25,6 +25,7 @@ mod config;
 mod reputil;
 
 static RAIN_GAUGE_COUNTER: AtomicU32 = AtomicU32::new(0);
+static RAIN_INTERRUPT_FIRED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, Copy, Serialize)]
 struct LuxMeasurement {
@@ -110,6 +111,7 @@ fn main() -> reputil::Rslt {
         rain_gauge_sense.subscribe(|| {
             // Inside ISR
             RAIN_GAUGE_COUNTER.fetch_add(1, Ordering::Relaxed);
+            RAIN_INTERRUPT_FIRED.store(true, Ordering::Relaxed);
         })?;
     }
     rain_gauge_sense.enable_interrupt()?;
@@ -213,6 +215,14 @@ fn main() -> reputil::Rslt {
             batch_id += 1;
 
             next_network_update += config::NETWORK_PERIOD;
+        }
+
+        // ISR cleanup
+        if RAIN_INTERRUPT_FIRED.swap(false, Ordering::Relaxed) {
+            // Debounce delay
+            reputil::delay(reputil::Duration::from_millis(50));
+            // Rearm interrrupt
+            rain_gauge_sense.enable_interrupt()?;
         }
 
         //TODO: add resilient networking cleanup task (maybe?)
