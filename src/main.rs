@@ -49,6 +49,7 @@ fn main() -> reputil::Rslt {
     reputil::enable_uart_blocking_read();
 
     // TODO: add LED(GPIO 17) turning on when finishing setup and blinking when sending data
+    // TODO: add general-purpose relay(GPIO 16) able to be turned on using an HTTP API
     let peripherals = Peripherals::take()?;
     let sys_loop = EspSystemEventLoop::take()?;
     let nvs = EspDefaultNvsPartition::take()?;
