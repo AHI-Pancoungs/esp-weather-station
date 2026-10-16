@@ -468,7 +468,7 @@ pub fn provision_mqtt(
             "n" => {
                 let ur = until_success_or(
                     || {
-                        let s = console_prompt("Broker URL(ex. mqtt://mqtt.example.net:1883")?;
+                        let s = console_prompt("Broker URL(ex. mqtt://mqtt.example.net:1883)")?;
                         log::info!("Got URL: \"{}\"", s);
                         if s.trim() != "" {
                             Ok(s)
@@ -494,20 +494,33 @@ pub fn provision_mqtt(
                         .as_str()
                         .try_into()
                         .map_err(|_| anyhow::anyhow!("Password too long"))?;
+                    if let Some(ref part) = nvs {
+                        let nvs_storage = EspNvs::new(part.clone(), "mqtt_creds", true)?;
+                        nvs_storage.set_str("url", url.as_str())?;
+                        nvs_storage.set_str("user", user.as_str())?;
+                        nvs_storage.set_str("password", pass.as_str())?;
+                    }
                     Ok((url, Some(user), Some(pass)))
                 } else {
+                    if let Some(ref part) = nvs {
+                        let nvs_storage = EspNvs::new(part.clone(), "mqtt_creds", true)?;
+                        nvs_storage.set_str("url", url.as_str())?;
+                        nvs_storage.remove("user")?;
+                        nvs_storage.remove("password")?;
+                    }
                     Ok((url, None, None))
                 }
             }
             _ => {
+                log::info!("Using NVS creds.");
                 if let Some(ref part) = nvs {
                     let nvs_storage = EspNvs::new(part.clone(), "mqtt_creds", false)?;
-                    let mut url_buf = [0u8, 128];
+                    let mut url_buf = [0u8; 128];
                     let mut user_buf = [0u8; 64];
                     let mut pass_buf = [0u8; 64];
 
                     let u = nvs_storage.get_str("url", &mut url_buf)?;
-                    let s = nvs_storage.get_str("ssid", &mut user_buf)?;
+                    let s = nvs_storage.get_str("user", &mut user_buf)?;
                     let p = nvs_storage.get_str("password", &mut pass_buf)?;
 
                     match (u, s, p) {
@@ -534,7 +547,7 @@ pub fn provision_mqtt(
                             let ur = until_success_or(
                                 || {
                                     let s = console_prompt(
-                                        "Broker URL(ex. mqtt://mqtt.example.net:1883",
+                                        "Broker URL(ex. mqtt://mqtt.example.net:1883)",
                                     )?;
                                     log::info!("Got URL: \"{}\"", s);
                                     if s.trim() != "" {
@@ -563,8 +576,22 @@ pub fn provision_mqtt(
                                     .as_str()
                                     .try_into()
                                     .map_err(|_| anyhow::anyhow!("Password too long"))?;
+                                if let Some(ref part) = nvs {
+                                    let nvs_storage =
+                                        EspNvs::new(part.clone(), "mqtt_creds", true)?;
+                                    nvs_storage.set_str("url", url.as_str())?;
+                                    nvs_storage.set_str("user", user.as_str())?;
+                                    nvs_storage.set_str("password", pass.as_str())?;
+                                }
                                 Ok((url, Some(user), Some(pass)))
                             } else {
+                                if let Some(ref part) = nvs {
+                                    let nvs_storage =
+                                        EspNvs::new(part.clone(), "mqtt_creds", true)?;
+                                    nvs_storage.set_str("url", url.as_str())?;
+                                    nvs_storage.remove("user")?;
+                                    nvs_storage.remove("password")?;
+                                }
                                 Ok((url, None, None))
                             }
                         }
@@ -572,7 +599,7 @@ pub fn provision_mqtt(
                 } else {
                     let ur = until_success_or(
                         || {
-                            let s = console_prompt("Broker URL(ex. mqtt://mqtt.example.net:1883")?;
+                            let s = console_prompt("Broker URL(ex. mqtt://mqtt.example.net:1883)")?;
                             log::info!("Got URL: \"{}\"", s);
                             if s.trim() != "" {
                                 Ok(s)
@@ -598,8 +625,20 @@ pub fn provision_mqtt(
                             .as_str()
                             .try_into()
                             .map_err(|_| anyhow::anyhow!("Password too long"))?;
+                        if let Some(ref part) = nvs {
+                            let nvs_storage = EspNvs::new(part.clone(), "mqtt_creds", true)?;
+                            nvs_storage.set_str("url", url.as_str())?;
+                            nvs_storage.set_str("user", user.as_str())?;
+                            nvs_storage.set_str("password", pass.as_str())?;
+                        }
                         Ok((url, Some(user), Some(pass)))
                     } else {
+                        if let Some(ref part) = nvs {
+                            let nvs_storage = EspNvs::new(part.clone(), "mqtt_creds", true)?;
+                            nvs_storage.set_str("url", url.as_str())?;
+                            nvs_storage.remove("user")?;
+                            nvs_storage.remove("password")?;
+                        }
                         Ok((url, None, None))
                     }
                 }
@@ -608,12 +647,12 @@ pub fn provision_mqtt(
     } else {
         if let Some(ref part) = nvs {
             let nvs_storage = EspNvs::new(part.clone(), "mqtt_creds", false)?;
-            let mut url_buf = [0u8, 128];
+            let mut url_buf = [0u8; 128];
             let mut user_buf = [0u8; 64];
             let mut pass_buf = [0u8; 64];
 
             let u = nvs_storage.get_str("url", &mut url_buf)?;
-            let s = nvs_storage.get_str("ssid", &mut user_buf)?;
+            let s = nvs_storage.get_str("user", &mut user_buf)?;
             let p = nvs_storage.get_str("password", &mut pass_buf)?;
 
             match (u, s, p) {
@@ -637,7 +676,7 @@ pub fn provision_mqtt(
                 _ => {
                     let ur = until_success_or(
                         || {
-                            let s = console_prompt("Broker URL(ex. mqtt://mqtt.example.net:1883")?;
+                            let s = console_prompt("Broker URL(ex. mqtt://mqtt.example.net:1883)")?;
                             log::info!("Got URL: \"{}\"", s);
                             if s.trim() != "" {
                                 Ok(s)
@@ -663,8 +702,20 @@ pub fn provision_mqtt(
                             .as_str()
                             .try_into()
                             .map_err(|_| anyhow::anyhow!("Password too long"))?;
+                        if let Some(ref part) = nvs {
+                            let nvs_storage = EspNvs::new(part.clone(), "mqtt_creds", true)?;
+                            nvs_storage.set_str("url", url.as_str())?;
+                            nvs_storage.set_str("user", user.as_str())?;
+                            nvs_storage.set_str("password", pass.as_str())?;
+                        }
                         Ok((url, Some(user), Some(pass)))
                     } else {
+                        if let Some(ref part) = nvs {
+                            let nvs_storage = EspNvs::new(part.clone(), "mqtt_creds", true)?;
+                            nvs_storage.set_str("url", url.as_str())?;
+                            nvs_storage.remove("user")?;
+                            nvs_storage.remove("password")?;
+                        }
                         Ok((url, None, None))
                     }
                 }
@@ -672,7 +723,7 @@ pub fn provision_mqtt(
         } else {
             let ur = until_success_or(
                 || {
-                    let s = console_prompt("Broker URL(ex. mqtt://mqtt.example.net:1883")?;
+                    let s = console_prompt("Broker URL(ex. mqtt://mqtt.example.net:1883)")?;
                     log::info!("Got URL: \"{}\"", s);
                     if s.trim() != "" {
                         Ok(s)
@@ -698,8 +749,20 @@ pub fn provision_mqtt(
                     .as_str()
                     .try_into()
                     .map_err(|_| anyhow::anyhow!("Password too long"))?;
+                if let Some(ref part) = nvs {
+                    let nvs_storage = EspNvs::new(part.clone(), "mqtt_creds", true)?;
+                    nvs_storage.set_str("url", url.as_str())?;
+                    nvs_storage.set_str("user", user.as_str())?;
+                    nvs_storage.set_str("password", pass.as_str())?;
+                }
                 Ok((url, Some(user), Some(pass)))
             } else {
+                if let Some(ref part) = nvs {
+                    let nvs_storage = EspNvs::new(part.clone(), "mqtt_creds", true)?;
+                    nvs_storage.set_str("url", url.as_str())?;
+                    nvs_storage.remove("user")?;
+                    nvs_storage.remove("password")?;
+                }
                 Ok((url, None, None))
             }
         }
