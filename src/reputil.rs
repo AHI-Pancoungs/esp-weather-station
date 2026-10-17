@@ -453,7 +453,8 @@ pub fn setup_wifi<'a>(
     }
 }
 
-use esp_idf_svc::mqtt::client::{EspMqttClient, EventPayload, MqttClientConfiguration};
+use esp_idf_svc::mqtt::client::{EspMqttClient, MqttClientConfiguration};
+pub use esp_idf_svc::mqtt::client::{EspMqttEvent, EventPayload};
 
 pub fn provision_mqtt(
     nvs: Option<EspDefaultNvsPartition>,
@@ -769,12 +770,16 @@ pub fn provision_mqtt(
     }
 }
 
-pub fn setup_mqtt(
+pub fn setup_mqtt<F>(
     url: &str,
     user: Option<&str>,
     pass: Option<&str>,
     client_id: &str,
-) -> Result<EspMqttClient<'static>, Err> {
+    mqtt_callback: F,
+) -> Result<EspMqttClient<'static>, Err>
+where
+    F: for<'b> FnMut(EspMqttEvent<'b>) + Send + 'static,
+{
     let conf = MqttClientConfiguration {
         client_id: Some(client_id),
         username: user,
@@ -782,7 +787,12 @@ pub fn setup_mqtt(
         ..Default::default()
     };
 
-    EspMqttClient::new_cb(url, &conf, move |event| match event.payload() {
+    EspMqttClient::new_cb(url, &conf, mqtt_callback)
+        .map_err(|_| Err::msg("Failed initlalizing MQTT"))
+}
+
+pub fn default_mqtt_callback(event: EspMqttEvent<'_>) {
+    match event.payload() {
         EventPayload::Connected(_) => {
             log::info!("MQTT Connected.")
         }
@@ -797,6 +807,5 @@ pub fn setup_mqtt(
         other => {
             log::debug!("MQTT event: {:?}", other);
         }
-    })
-    .map_err(|_| Err::msg("Failed initlalizing MQTT"))
+    }
 }

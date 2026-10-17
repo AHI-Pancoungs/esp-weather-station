@@ -86,12 +86,46 @@ fn main() -> reputil::Rslt {
 
     log::info!("Wi-Fi networking successfully initialized.");
 
+    let mut led_pin = PinDriver::output(peripherals.pins.gpio17)?;
+    let led_shared = reputil::SharedMut::new(led_pin);
+
     let (mqtt_url, mqtt_user, mqtt_pass) = reputil::provision_mqtt(Some(nvs.clone()))?;
     let mut mqtt = reputil::setup_mqtt(
         mqtt_url.as_str(),
         mqtt_user.as_deref(),
         mqtt_pass.as_deref(),
         config::MQTT_CLIENT_ID,
+        move |event| match event.payload() {
+            reputil::EventPayload::Connected(_) => {
+                log::info!("MQTT Connected.");
+                let led_shared_cl = led_shared.clone();
+                std::thread::spawn(move || led_shared_cl.lock().set_high());
+            }
+            reputil::EventPayload::Disconnected => {
+                log::warn!("MQTT Disconnected.")
+            }
+
+            reputil::EventPayload::Published(msg_id) => {
+                log::info!("MQTT message with ID {} has been published.", msg_id);
+                let led_shared_cl = led_shared.clone();
+                std::thread::spawn(move || -> reputil::Rslt {
+                    led_shared_cl.with(|led| -> reputil::Rslt {
+                        led.set_low()?;
+                        std::thread::sleep(config::LED_BLINK_PERIOD);
+                        led.set_high()?;
+                        Ok(())
+                    })
+                });
+            }
+
+            reputil::EventPayload::Error(err) => {
+                log::error!("MQTT error: {:?}", err);
+            }
+
+            other => {
+                log::debug!("MQTT event: {:?}", other);
+            }
+        },
     )?;
 
     let mut bh = BH1750::new(RefCellDevice::new(&i2c_bus), delay, false);
@@ -115,10 +149,6 @@ fn main() -> reputil::Rslt {
         })?;
     }
     rain_gauge_sense.enable_interrupt()?;
-
-    let mut led_pin = PinDriver::output(peripherals.pins.gpio17)?;
-    led_pin.set_high()?;
-    let led_shared = reputil::SharedMut::new(led_pin);
 
     let mut lux_measurement_batch: HVec<LuxMeasurement, 60> = HVec::new();
     let mut batch_start = Instant::now();
@@ -199,16 +229,6 @@ fn main() -> reputil::Rslt {
                 false,
                 json.as_bytes(),
             )?;
-
-            let led_shared_cl = led_shared.clone();
-            std::thread::spawn(move || -> reputil::Rslt {
-                led_shared_cl.with(|led| -> reputil::Rslt {
-                    led.set_low()?;
-                    std::thread::sleep(config::LED_BLINK_PERIOD);
-                    led.set_high()?;
-                    Ok(())
-                })
-            });
 
             lux_measurement_batch.clear();
             batch_start = Instant::now();
