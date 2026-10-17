@@ -49,17 +49,26 @@ where
         match f() {
             Ok(r) => return Some(r),
             Err(err) => {
-                log::warn!(
-                    "{:?}\nAttempt {} error caught, retrying...",
-                    err,
-                    retries + 1
-                );
+                if retries + 1 >= max_retries {
+                    log::error!(
+                        "{:?}\nAttempt {} error caught, ran out of retries.",
+                        err,
+                        retries + 1
+                    );
+                } else {
+                    log::warn!(
+                        "{:?}\nAttempt {} error caught, retrying...",
+                        err,
+                        retries + 1
+                    );
+                };
                 retries += 1;
                 continue;
             }
         }
     }
-    return None;
+    log::error!("Too many failed attempts, returning None instead.");
+    None
 }
 
 use std::fmt::Debug;
@@ -69,13 +78,13 @@ where
     E: Into<anyhow::Error> + Debug,
 {
     let mut retries: u32 = 0;
-    while max_retries >= retries {
+    loop {
         match f() {
             Ok(r) => return Ok(r),
             Err(err) => {
-                if max_retries >= retries - 1 {
+                if retries >= max_retries {
                     log::error!(
-                        "{:?}\nAttempt {} error caught, ran out of retries",
+                        "{:?}\nAttempt {} error caught, ran out of retries.",
                         err,
                         retries + 1
                     );
@@ -86,13 +95,12 @@ where
                         err,
                         retries + 1
                     );
-                }
+                };
                 retries += 1;
                 continue;
             }
         }
     }
-    Err(anyhow::Error::msg("Invalid state"))
 }
 
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -485,7 +493,7 @@ pub fn provision_mqtt(
                 let url: heapless::String<128> = ur
                     .as_str()
                     .try_into()
-                    .map_err(|_| anyhow::anyhow!("Username too long"))?;
+                    .map_err(|_| anyhow::anyhow!("URL too long"))?;
                 if let (Some(u), Some(p)) = (u, p) {
                     let user: heapless::String<64> = u
                         .as_str()
@@ -567,7 +575,7 @@ pub fn provision_mqtt(
                             let url: heapless::String<128> = ur
                                 .as_str()
                                 .try_into()
-                                .map_err(|_| anyhow::anyhow!("Username too long"))?;
+                                .map_err(|_| anyhow::anyhow!("URL too long"))?;
                             if let (Some(u), Some(p)) = (u, p) {
                                 let user: heapless::String<64> = u
                                     .as_str()
@@ -616,7 +624,7 @@ pub fn provision_mqtt(
                     let url: heapless::String<128> = ur
                         .as_str()
                         .try_into()
-                        .map_err(|_| anyhow::anyhow!("Username too long"))?;
+                        .map_err(|_| anyhow::anyhow!("URL too long"))?;
                     if let (Some(u), Some(p)) = (u, p) {
                         let user: heapless::String<64> = u
                             .as_str()
@@ -693,7 +701,7 @@ pub fn provision_mqtt(
                     let url: heapless::String<128> = ur
                         .as_str()
                         .try_into()
-                        .map_err(|_| anyhow::anyhow!("Username too long"))?;
+                        .map_err(|_| anyhow::anyhow!("URL too long"))?;
                     if let (Some(u), Some(p)) = (u, p) {
                         let user: heapless::String<64> = u
                             .as_str()
@@ -740,7 +748,7 @@ pub fn provision_mqtt(
             let url: heapless::String<128> = ur
                 .as_str()
                 .try_into()
-                .map_err(|_| anyhow::anyhow!("Username too long"))?;
+                .map_err(|_| anyhow::anyhow!("URL too long"))?;
             if let (Some(u), Some(p)) = (u, p) {
                 let user: heapless::String<64> = u
                     .as_str()
