@@ -39,7 +39,7 @@ struct MeasurementBatch {
     humidity_percent: f32,
     pressure_hpa: f32,
     rainfall_mm: f32,
-    lux_batch: HVec<LuxMeasurement, 60>,
+    lux_batch: HVec<LuxMeasurement, { config::LUX_BATCH_CAP }>,
     batch_id: u64,
 }
 
@@ -150,7 +150,7 @@ fn main() -> reputil::Rslt {
     }
     rain_gauge_sense.enable_interrupt()?;
 
-    let mut lux_measurement_batch: HVec<LuxMeasurement, 60> = HVec::new();
+    let mut lux_measurement_batch: HVec<LuxMeasurement, { config::LUX_BATCH_CAP }> = HVec::new();
     let mut batch_start = Instant::now();
     let mut batch_id: u64 = 0;
 
