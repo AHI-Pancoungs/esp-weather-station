@@ -10,7 +10,9 @@ pub const LED_BLINK_PERIOD: reputil::Duration = reputil::Duration::from_millis(2
 pub const MQTT_CLIENT_ID: &str = "esp32_01";
 pub const MQTT_SENSOR_TOPIC: &str = "weather_station/esp32_01/measurement";
 
-pub const MILIMETERS_PER_TIP: f32 = 0.30; // Design number for this sensor
+// Numbers for this rain gauge sensor
+pub const MILIMETERS_PER_TIP: f32 = 0.30;
+pub const DEBOUNCE_DURATION: reputil::Duration = reputil::Duration::from_millis(300);
 
 // build checks
 macro_rules! const_assert {
@@ -18,8 +20,6 @@ macro_rules! const_assert {
         const _: () = assert!($($t)*);
     };
 }
-
-// We have a total of 16KB of stack in main task, 12KB wasn't enough for the normal application to run
 
 // (4 (f32) + 8 (u64) + 4 (alignment)) * 200 = 3200 bytes(3.2KB) on the stack
 const_assert!(

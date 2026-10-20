@@ -10,6 +10,7 @@ use esp_idf_svc::{
         peripherals::Peripherals,
         units::KiloHertz,
     },
+    http::server::{Configuration as EspHttpServerConfig, EspHttpServer, Method as HttpMethod},
     mqtt::client::QoS,
     nvs::EspDefaultNvsPartition,
 };
@@ -47,7 +48,6 @@ fn main() -> reputil::Rslt {
     reputil::esp_init();
     reputil::enable_uart_blocking_read();
 
-    // TODO: add general-purpose relay(GPIO 16) able to be turned on using an HTTP API
     let peripherals = Peripherals::take()?;
     let sys_loop = EspSystemEventLoop::take()?;
     let nvs = EspDefaultNvsPartition::take()?;
@@ -72,10 +72,21 @@ fn main() -> reputil::Rslt {
         4,
     )?;
 
-    log::info!("BME280 sensor successfully Initialized.");
+    log::info!("BME280 sensor successfully initialized.");
+
+    let mut bh = BH1750::new(RefCellDevice::new(&i2c_bus), delay, false);
+
+    bh.start_continuous_measurement(Resolution::High)
+        .map_err(|_| {
+            reputil::Err::msg(
+                "Error in initializing the BH1750 sensor, please check the connection.",
+            )
+        })?;
+
+    log::info!("BH1750 sensor successfully Initialized.");
 
     let (ssid, pass) = reputil::provision_wifi(Some(nvs.clone()))?;
-    let _wifi = reputil::setup_wifi(
+    let wifi = reputil::setup_wifi(
         peripherals.modem,
         sys_loop,
         Some(nvs.clone()),
@@ -83,11 +94,13 @@ fn main() -> reputil::Rslt {
         &pass,
         4,
     )?;
+    let ip_info = wifi.wifi().sta_netif().get_ip_info()?;
 
     log::info!("Wi-Fi networking successfully initialized.");
 
     let mut led_pin = PinDriver::output(peripherals.pins.gpio17)?;
     let led_shared = reputil::SharedMut::new(led_pin);
+    let led_mqtt = led_shared.clone();
 
     let (mqtt_url, mqtt_user, mqtt_pass) = reputil::provision_mqtt(Some(nvs.clone()))?;
     let mut mqtt = reputil::setup_mqtt(
@@ -98,7 +111,7 @@ fn main() -> reputil::Rslt {
         move |event| match event.payload() {
             reputil::EventPayload::Connected(_) => {
                 log::info!("MQTT Connected.");
-                let led_shared_cl = led_shared.clone();
+                let led_shared_cl = led_mqtt.clone();
                 std::thread::spawn(move || led_shared_cl.lock().set_high());
             }
             reputil::EventPayload::Disconnected => {
@@ -107,7 +120,7 @@ fn main() -> reputil::Rslt {
 
             reputil::EventPayload::Published(msg_id) => {
                 log::info!("MQTT message with ID {} has been published.", msg_id);
-                let led_shared_cl = led_shared.clone();
+                let led_shared_cl = led_mqtt.clone();
                 std::thread::spawn(move || -> reputil::Rslt {
                     led_shared_cl.with(|led| -> reputil::Rslt {
                         led.set_low()?;
@@ -128,14 +141,43 @@ fn main() -> reputil::Rslt {
         },
     )?;
 
-    let mut bh = BH1750::new(RefCellDevice::new(&i2c_bus), delay, false);
+    let mut server = EspHttpServer::new(&EspHttpServerConfig::default())?;
+    let led_server = led_shared.clone();
 
-    bh.start_continuous_measurement(Resolution::High)
-        .map_err(|_| {
-            reputil::Err::msg(
-                "Error in initializing the BH1750 sensor, please check the connection.",
-            )
-        })?;
+    let relay = PinDriver::output(peripherals.pins.gpio16)?;
+    let relay_server = reputil::SharedMut::new(relay);
+
+    server.fn_handler("/relay", HttpMethod::Get, move |request| -> reputil::Rslt {
+        relay_server.with(|relay| -> reputil::Rslt {
+            if relay.is_set_high() {
+                relay.set_low()?;
+            } else {
+                relay.set_high()?;
+            };
+            // blink led as well
+            let led_shared_cl = led_server.clone();
+            std::thread::spawn(move || -> reputil::Rslt {
+                led_shared_cl.with(|led| -> reputil::Rslt {
+                    led.set_low()?;
+                    std::thread::sleep(config::LED_BLINK_PERIOD);
+                    led.set_high()?;
+                    Ok(())
+                })
+            });
+            request.into_response(
+                200,
+                Some(&format!("Relay is now set to `{}`.", relay.is_set_high())),
+                &[("Content-Type", "text/plain")],
+            )?;
+            Ok(())
+        })
+    })?;
+
+    log::info!(
+        "HTTP Server init complete. \nIP: {}\nSSID: {}\nLAN relay control at GET http://HOSTNAME/relay.",
+        ip_info.ip,
+        ssid
+    );
 
     let mut rain_gauge_sense = PinDriver::input(peripherals.pins.gpio4, Pull::Floating)?;
 
@@ -149,6 +191,8 @@ fn main() -> reputil::Rslt {
         })?;
     }
     rain_gauge_sense.enable_interrupt()?;
+
+    log::info!("Rain Gauge sensor using interrupts successfully initialized.");
 
     let mut lux_measurement_batch: HVec<LuxMeasurement, { config::LUX_BATCH_CAP }> = HVec::new();
     let mut batch_start = Instant::now();
@@ -240,9 +284,13 @@ fn main() -> reputil::Rslt {
         // ISR cleanup
         if RAIN_INTERRUPT_FIRED.swap(false, Ordering::Relaxed) {
             // Debounce delay
-            reputil::delay(reputil::Duration::from_millis(50));
+            reputil::delay(config::DEBOUNCE_DURATION);
             // Rearm interrrupt
             rain_gauge_sense.enable_interrupt()?;
+            log::info!(
+                "Rain gauge ISR has been re-enabled, tip counter is now: {}",
+                RAIN_GAUGE_COUNTER.load(Ordering::Relaxed)
+            )
         }
 
         //TODO: add resilient networking cleanup task (maybe?)
