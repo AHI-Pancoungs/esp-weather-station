@@ -98,11 +98,13 @@ fn main() -> reputil::Rslt {
 
     log::info!("Wi-Fi networking successfully initialized.");
 
-    let mut led_pin = PinDriver::output(peripherals.pins.gpio17)?;
+    let led_pin = PinDriver::output(peripherals.pins.gpio17)?;
     let led_shared = reputil::SharedMut::new(led_pin);
     let led_mqtt = led_shared.clone();
+    let led_ret_time: reputil::SharedMut<Option<Instant>> = reputil::SharedMut::new(None);
 
     let (mqtt_url, mqtt_user, mqtt_pass) = reputil::provision_mqtt(Some(nvs.clone()))?;
+    let led_ret_mqtt = led_ret_time.clone();
     let mut mqtt = reputil::setup_mqtt(
         mqtt_url.as_str(),
         mqtt_user.as_deref(),
@@ -111,24 +113,20 @@ fn main() -> reputil::Rslt {
         move |event| match event.payload() {
             reputil::EventPayload::Connected(_) => {
                 log::info!("MQTT Connected.");
-                let led_shared_cl = led_mqtt.clone();
-                std::thread::spawn(move || led_shared_cl.lock().set_high());
+                let _ = led_mqtt.lock().set_low();
+                led_ret_mqtt
+                    .with(|led_ret| *led_ret = Some(Instant::now() + config::LED_BLINK_PERIOD));
             }
+
             reputil::EventPayload::Disconnected => {
-                log::warn!("MQTT Disconnected.")
+                log::warn!("MQTT Disconnected.");
             }
 
             reputil::EventPayload::Published(msg_id) => {
                 log::info!("MQTT message with ID {} has been published.", msg_id);
-                let led_shared_cl = led_mqtt.clone();
-                std::thread::spawn(move || -> reputil::Rslt {
-                    led_shared_cl.with(|led| -> reputil::Rslt {
-                        led.set_low()?;
-                        std::thread::sleep(config::LED_BLINK_PERIOD);
-                        led.set_high()?;
-                        Ok(())
-                    })
-                });
+                let _ = led_mqtt.lock().set_low();
+                led_ret_mqtt
+                    .with(|led_ret| *led_ret = Some(Instant::now() + config::LED_BLINK_PERIOD));
             }
 
             reputil::EventPayload::Error(err) => {
@@ -146,7 +144,7 @@ fn main() -> reputil::Rslt {
 
     let relay = PinDriver::output(peripherals.pins.gpio16)?;
     let relay_server = reputil::SharedMut::new(relay);
-
+    let led_ret_server = led_ret_time.clone();
     server.fn_handler("/relay", HttpMethod::Get, move |request| -> reputil::Rslt {
         relay_server.with(|relay| -> reputil::Rslt {
             if relay.is_set_high() {
@@ -155,15 +153,9 @@ fn main() -> reputil::Rslt {
                 relay.set_high()?;
             };
             // blink led as well
-            let led_shared_cl = led_server.clone();
-            std::thread::spawn(move || -> reputil::Rslt {
-                led_shared_cl.with(|led| -> reputil::Rslt {
-                    led.set_low()?;
-                    std::thread::sleep(config::LED_BLINK_PERIOD);
-                    led.set_high()?;
-                    Ok(())
-                })
-            });
+            let _ = led_server.lock().set_low();
+            led_ret_server
+                .with(|led_ret| *led_ret = Some(Instant::now() + config::LED_BLINK_PERIOD));
             request.into_response(
                 200,
                 Some(&format!("Relay is now set to `{}`.", relay.is_set_high())),
@@ -251,6 +243,11 @@ fn main() -> reputil::Rslt {
                 Ok(reading) => reading,
                 Err(_) => {
                     log::error!("Error in reading the BME280 sensor, skipping this measurement and network update...");
+                    //reset counters just like normal
+                    RAIN_GAUGE_COUNTER.store(0, Ordering::Relaxed);
+                    lux_measurement_batch.clear();
+                    batch_start = Instant::now();
+
                     next_network_update += config::NETWORK_PERIOD;
                     if now >= next_network_update {
                         next_network_update = now + config::NETWORK_PERIOD;
@@ -286,6 +283,22 @@ fn main() -> reputil::Rslt {
 
             next_network_update += config::NETWORK_PERIOD;
         }
+
+        led_ret_time.with(|led_ret| -> reputil::Rslt {
+            if led_ret.is_some_and(|target| target <= now) {
+                *led_ret = None;
+            }
+
+            if led_ret.is_none() {
+                led_shared.with(|led| -> reputil::Rslt {
+                    if led.is_set_low() {
+                        led.set_high()?;
+                    }
+                    Ok(())
+                })?;
+            }
+            Ok(())
+        })?;
 
         // ISR cleanup
         if RAIN_INTERRUPT_FIRED.swap(false, Ordering::Relaxed) {
