@@ -241,13 +241,19 @@ fn main() -> reputil::Rslt {
         }
 
         if now >= next_network_update {
-            let bme_reading = match bme.measure(&mut delay) {
+            let bme_reading = match reputil::until_success(
+                || {
+                    bme.measure(&mut delay)
+                        .map_err(|_| reputil::Err::msg("Error in reading the BME280 sensor."))
+                },
+                4,
+            ) {
                 Ok(reading) => reading,
                 Err(_) => {
-                    log::error!("Error in reading the BME280 sensor, skipping this measurement...");
-                    next_sensor_read += config::SENSOR_PERIOD;
-                    if now >= next_sensor_read {
-                        next_sensor_read = now + config::SENSOR_PERIOD;
+                    log::error!("Error in reading the BME280 sensor, skipping this measurement and network update...");
+                    next_network_update += config::NETWORK_PERIOD;
+                    if now >= next_network_update {
+                        next_network_update = now + config::NETWORK_PERIOD;
                     }
                     continue;
                 }
