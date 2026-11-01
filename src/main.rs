@@ -233,6 +233,18 @@ fn main() -> reputil::Rslt {
         }
 
         if now >= next_network_update {
+            log::info!("Reading BME280 sensor...");
+            let mut reset_counters = || {
+                RAIN_GAUGE_COUNTER.store(0, Ordering::Relaxed);
+                lux_measurement_batch.clear();
+                batch_start = Instant::now();
+
+                next_network_update += config::NETWORK_PERIOD;
+                if now >= next_network_update {
+                    next_network_update = now + config::NETWORK_PERIOD;
+                };
+            };
+
             let bme_reading = match reputil::until_success(
                 || {
                     bme.measure(&mut delay)
@@ -244,19 +256,62 @@ fn main() -> reputil::Rslt {
                 Err(_) => {
                     log::error!("Error in reading the BME280 sensor, skipping this measurement and network update...");
                     //reset counters just like normal
-                    RAIN_GAUGE_COUNTER.store(0, Ordering::Relaxed);
-                    lux_measurement_batch.clear();
-                    batch_start = Instant::now();
-
-                    next_network_update += config::NETWORK_PERIOD;
-                    if now >= next_network_update {
-                        next_network_update = now + config::NETWORK_PERIOD;
-                    }
+                    reset_counters();
                     continue;
                 }
             };
-            log::info!("Starting network update...");
 
+            log::info!("Checking BME280 sensor data...");
+            if bme_reading.temperature > config::MAX_TEMP_ALLOWED {
+                log::error!(
+                    "BME280 sensor output is {}, but MAX_TEMP is {}, skipping this measurement and network update...",
+                    bme_reading.temperature,
+                    config::MAX_TEMP_ALLOWED
+                );
+                reset_counters();
+                continue;
+            }
+            if bme_reading.temperature < config::MIN_TEMP_ALLOWED {
+                log::error!(
+                    "BME280 sensor output is {}, but MIN_TEMP is {}, skipping this measurement and network update...",
+                    bme_reading.temperature,
+                    config::MIN_TEMP_ALLOWED
+                );
+                reset_counters();
+                continue;
+            }
+            if bme_reading.pressure > config::MAX_PRESSURE_ALLOWED {
+                log::error!(
+                    "BME280 sensor output is {}, but MAX_PRESSURE is {}, skipping this measurement and network update...",
+                    bme_reading.pressure,
+                    config::MAX_PRESSURE_ALLOWED
+                );
+                reset_counters();
+                continue;
+            }
+            if bme_reading.pressure < config::MIN_PRESSURE_ALLOWED {
+                log::error!(
+                    "BME280 sensor output is {}, but MIN_PRESSURE is {}, skipping this measurement and network update...",
+                    bme_reading.pressure,
+                    config::MIN_PRESSURE_ALLOWED
+                );
+                reset_counters();
+                continue;
+            }
+
+            log::info!("Cleaning lux batch data...");
+            let prev_len = lux_measurement_batch.len();
+            lux_measurement_batch = lux_measurement_batch
+                .iter()
+                .filter(|&measure| measure.measurement <= config::MAX_LUX_ALLOWED)
+                .copied()
+                .collect();
+            log::info!(
+                "Finished cleaning, {} measurement data points cleaned.",
+                prev_len - lux_measurement_batch.len()
+            );
+
+            log::info!("Starting network update...");
             let batch = MeasurementBatch {
                 temperature_c: bme_reading.temperature,
                 humidity_percent: bme_reading.humidity,
