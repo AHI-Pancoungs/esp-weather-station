@@ -17,8 +17,8 @@ pub const DEBOUNCE_DURATION: reputil::Duration = reputil::Duration::from_millis(
 // use sane ranges for the deployment spot, also consider the sensor's capabiliites
 pub const MAX_TEMP_ALLOWED: f32 = 50.0; // C
 pub const MIN_TEMP_ALLOWED: f32 = 10.0;
-pub const MAX_PRESSURE_ALLOWED: f32 = 1100.0; // hPA, max pressure measurable by the sensor
-pub const MIN_PRESSURE_ALLOWED: f32 = 700.0;
+pub const MAX_PRESSURE_ALLOWED: f32 = 1100.0 * 100.; // Pa, max pressure measurable by the sensor
+pub const MIN_PRESSURE_ALLOWED: f32 = 700.0 * 100.;
 pub const MAX_LUX_ALLOWED: f32 = 10000.0; // in a shaded spot, no direct sun
 
 // build checks
