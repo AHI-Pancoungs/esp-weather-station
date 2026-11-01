@@ -817,3 +817,61 @@ pub fn default_mqtt_callback(event: EspMqttEvent<'_>) {
         }
     }
 }
+
+pub use esp_idf_svc::hal::sleep as esp_sleep;
+
+use esp_idf_svc::sys::{
+    esp, esp_wifi_set_ps, wifi_ps_type_t, wifi_ps_type_t_WIFI_PS_MAX_MODEM,
+    wifi_ps_type_t_WIFI_PS_MIN_MODEM, wifi_ps_type_t_WIFI_PS_NONE,
+};
+
+/// Power-saving modes for WiFi modem sleep.
+#[derive(Debug, Clone, Copy)]
+pub enum WifiPowerSavingMode {
+    /// No power-saving(default).
+    NONE,
+    /// WiFI modem powers on to recieve beacons every DTIM interval, the recommended mode.
+    LOW,
+    /// WiFI modem powers on to recieve beacons every listen_interval parameter in wifi_sta_config_t.\
+    /// Note: the listen_interval parameter is not available on higher-level APIs, if in doubt just use `::LOW`.
+    HIGH,
+}
+
+#[allow(nonstandard_style)]
+impl From<wifi_ps_type_t> for WifiPowerSavingMode {
+    fn from(v: wifi_ps_type_t) -> Self {
+        match v {
+            wifi_ps_type_t_WIFI_PS_NONE => Self::NONE,
+            wifi_ps_type_t_WIFI_PS_MIN_MODEM => Self::LOW,
+            wifi_ps_type_t_WIFI_PS_MAX_MODEM => Self::HIGH,
+            _ => Self::NONE,
+        }
+    }
+}
+#[deny(nonstandard_style)]
+
+impl Into<wifi_ps_type_t> for WifiPowerSavingMode {
+    fn into(self) -> wifi_ps_type_t {
+        match self {
+            Self::NONE => wifi_ps_type_t_WIFI_PS_NONE,
+            Self::LOW => wifi_ps_type_t_WIFI_PS_MIN_MODEM,
+            Self::HIGH => wifi_ps_type_t_WIFI_PS_MAX_MODEM,
+        }
+    }
+}
+
+pub fn use_wifi_modem_power_saving(mode: WifiPowerSavingMode) -> Rslt {
+    unsafe { esp!(esp_wifi_set_ps(mode.into())) }.map_err(|e| {
+        Err::msg(format!(
+            "Failed to set WiFI Modem Sleep Power Saving mode: {}",
+            e
+        ))
+    })?;
+    Ok(match mode {
+        WifiPowerSavingMode::NONE => log::info!("Disabled WiFI Modem Sleep Power Saving."),
+        WifiPowerSavingMode::LOW => log::info!("Enabled WiFI Modem Sleep Power Saving, mode LOW."),
+        WifiPowerSavingMode::HIGH => {
+            log::info!("Enabled WiFI Modem Sleep Power Saving, mode HiGH.")
+        }
+    })
+}

@@ -171,7 +171,9 @@ fn main() -> reputil::Rslt {
         ssid
     );
 
-    let mut rain_gauge_sense = PinDriver::input(peripherals.pins.gpio4, Pull::Floating)?;
+    reputil::use_wifi_modem_power_saving(reputil::WifiPowerSavingMode::LOW)?;
+
+    let mut rain_gauge_sense = PinDriver::input(peripherals.pins.gpio4, Pull::Up)?;
 
     rain_gauge_sense.set_interrupt_type(InterruptType::NegEdge)?;
 
@@ -183,6 +185,8 @@ fn main() -> reputil::Rslt {
         })?;
     }
     rain_gauge_sense.enable_interrupt()?;
+
+    let mut rain_gauge_debounce_reset: Option<Instant> = None;
 
     log::info!("Rain Gauge sensor using interrupts successfully initialized.");
 
@@ -343,10 +347,14 @@ fn main() -> reputil::Rslt {
             Ok(())
         })?;
 
-        // ISR cleanup
+        // async ISR cleanup
         if RAIN_INTERRUPT_FIRED.swap(false, Ordering::Relaxed) {
-            // Debounce delay
-            reputil::delay(config::DEBOUNCE_DURATION);
+            // Push debouce ISR reset deadline for later
+            rain_gauge_debounce_reset = Some(now + config::DEBOUNCE_DURATION);
+        }
+
+        if rain_gauge_debounce_reset.is_some_and(|target| target <= now) {
+            rain_gauge_debounce_reset = None;
             // Rearm interrrupt
             rain_gauge_sense.enable_interrupt()?;
             log::info!(
