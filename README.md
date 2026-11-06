@@ -12,8 +12,6 @@ The firmware is written using [embedded Rust](https://github.com/rust-embedded/a
 
 # Repo Licensing
 
-This repo and all of the code within are used on the [Eureka ITB Science Project Competition](https://www.eurekaitb.com/).
-
 Copyright © 2026 AHI Pancoungs. All rights reserved. No permission is granted to use, modify, or redistribute this software except as required or permitted by applicable law or competition rules.
 
 This software's direct dependencies may use different licenses, you can check each one here:
